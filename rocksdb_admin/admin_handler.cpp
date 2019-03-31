@@ -28,7 +28,7 @@
 #include "boost/filesystem.hpp"
 #include "common/network_util.h"
 #include "common/rocksdb_glogger/rocksdb_glogger.h"
-#include "common/thrift_router.h"
+#include "rocksdb_admin/thrift_router.h"
 #include "folly/FileUtil.h"
 #include "folly/ScopeGuard.h"
 #include "folly/String.h"
@@ -127,7 +127,7 @@ std::unique_ptr<::admin::ApplicationDBManager> CreateDBBasedOnConfig(
   std::string content;
   CHECK(folly::readFile(FLAGS_shard_config_path.c_str(), content));
 
-  auto cluster_layout = common::parseConfig(std::move(content), "");
+  auto cluster_layout = admin::parseConfig(std::move(content), "");
   CHECK(cluster_layout);
 
   folly::SocketAddress local_addr(common::getLocalIPAddress(), FLAGS_port);
@@ -138,7 +138,7 @@ std::unique_ptr<::admin::ApplicationDBManager> CreateDBBasedOnConfig(
     for (const auto& shard : segment.second.shard_to_hosts) {
       ++shard_id;
       bool do_i_own_it = false;
-      common::detail::Role my_role;
+      admin::detail::Role my_role;
 
       for (const auto& host : shard) {
         if (host.first->addr == local_addr) {
@@ -156,9 +156,9 @@ std::unique_ptr<::admin::ApplicationDBManager> CreateDBBasedOnConfig(
       auto options = rocksdb_options(segment.first);
       auto db_future = GetRocksdbFuture(FLAGS_rocksdb_dir + db_name, options);
       std::unique_ptr<folly::SocketAddress> upstream_addr(nullptr);
-      if (my_role == common::detail::Role::SLAVE) {
+      if (my_role == admin::detail::Role::SLAVE) {
         for (const auto& host : shard) {
-          if (host.second == common::detail::Role::MASTER) {
+          if (host.second == admin::detail::Role::MASTER) {
             upstream_addr =
               std::make_unique<folly::SocketAddress>(host.first->addr);
             upstream_addr->setPort(FLAGS_rocksdb_replicator_port);
@@ -175,7 +175,7 @@ std::unique_ptr<::admin::ApplicationDBManager> CreateDBBasedOnConfig(
           std::string err_msg;
           auto db = (*db_future).get();
           CHECK(db);
-          if (my_role == common::detail::Role::MASTER) {
+          if (my_role == admin::detail::Role::MASTER) {
             LOG(ERROR) << "Hosting master " << db_name;
             CHECK(db_manager->addDB(db_name, std::move(db),
                                     replicator::DBRole::MASTER,
@@ -183,7 +183,7 @@ std::unique_ptr<::admin::ApplicationDBManager> CreateDBBasedOnConfig(
             return;
           }
 
-          CHECK(my_role == common::detail::Role::SLAVE);
+          CHECK(my_role == admin::detail::Role::SLAVE);
           LOG(ERROR) << "Hosting slave " << db_name;
           CHECK(db_manager->addDB(db_name, std::move(db),
                                   replicator::DBRole::SLAVE,

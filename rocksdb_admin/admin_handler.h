@@ -114,6 +114,14 @@ class AdminHandler : virtual public AdminSvIf {
   // Dump stats for all DBs as a text string
   std::string DumpDBStatsAsText() const;
 
+  std::shared_ptr<ApplicationDBManager> GetDBManager() {
+    return db_manager_;
+  }
+
+  RocksDBOptionsGeneratorType& GetRocksDBOptionsGeneratorType() {
+    return rocksdb_options_;
+  }
+
  private:
   std::unique_ptr<rocksdb::DB> removeDB(const std::string& db_name,
                                         AdminException* ex);
@@ -124,7 +132,7 @@ class AdminHandler : virtual public AdminSvIf {
                      const std::string& s3_bucket,
                      const std::string& s3_path);
 
-  std::unique_ptr<ApplicationDBManager> db_manager_;
+  std::shared_ptr<ApplicationDBManager> db_manager_;
   RocksDBOptionsGeneratorType rocksdb_options_;
   // Lock to synchronize DB admin operations at per DB granularity
   common::ObjectLock<std::string> db_admin_lock_;

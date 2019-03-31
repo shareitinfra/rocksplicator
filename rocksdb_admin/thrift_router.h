@@ -34,13 +34,15 @@
 #include "folly/Hash.h"
 #include "folly/SocketAddress.h"
 #include "folly/ThreadLocal.h"
+#include "rocksdb_admin/application_db_manager.h"
+#include "rocksdb_admin/admin_handler.h"
 
 DECLARE_bool(always_prefer_local_host);
 DECLARE_int32(min_client_reconnect_interval_seconds);
 DECLARE_int64(client_connect_timeout_millis);
 DECLARE_int32(thrift_router_max_num_hosts_to_consider);
 
-namespace common {
+namespace admin {
 
 namespace detail {
 
@@ -73,6 +75,11 @@ struct ClusterLayout {
 };
 
 }  // namespace detail
+
+void AdjustDBBasedOnConfig(std::shared_ptr<const admin::detail::ClusterLayout> cluster_layout_,
+                      std::shared_ptr<const admin::detail::ClusterLayout> new_layout,
+                      const admin::RocksDBOptionsGeneratorType& rocksdb_options,
+                      std::shared_ptr<admin::ApplicationDBManager> db_manager_);
 
 /*
  * A router for sharded thrift services.
@@ -112,6 +119,9 @@ class ThriftRouter {
           parser_(content, local_group));
 
         if (new_layout) {
+          if (cluster_layout_) {
+            AdjustDBBasedOnConfig(cluster_layout_, new_layout, rocksdb_options_, db_manager_);
+          }
           std::atomic_store_explicit(&cluster_layout_, new_layout, std::memory_order_release);
         } else {
           LOG(ERROR) << "Failed to parse the config: " << content;
@@ -230,6 +240,14 @@ class ThriftRouter {
     }
 
     return itor->second.shard_to_hosts[shard].size();
+  }
+
+  void SetDBManager(std::shared_ptr<admin::ApplicationDBManager> db_manager) {
+    db_manager_ = db_manager;
+  }
+
+  void SetRocksDBOptionsGeneratorType(const admin::RocksDBOptionsGeneratorType& rocksdb_options) {
+    rocksdb_options_ = rocksdb_options;
   }
 
   // no copy or move
@@ -490,7 +508,7 @@ class ThriftRouter {
       uint64_t create_time;
     };
 
-    ThriftClientPool<ClientType, USE_BINARY_PROTOCOL> client_pool_;
+    common::ThriftClientPool<ClientType, USE_BINARY_PROTOCOL> client_pool_;
     folly::ThreadLocal<std::shared_ptr<const ClusterLayout>>
       local_cluster_layout_;
     folly::ThreadLocal<std::unordered_map<folly::SocketAddress,
@@ -503,6 +521,9 @@ class ThriftRouter {
 
   std::shared_ptr<const ClusterLayout> cluster_layout_;
   ThreadLocalClientMap local_client_map_;
+
+  std::shared_ptr<admin::ApplicationDBManager> db_manager_;
+  admin::RocksDBOptionsGeneratorType rocksdb_options_;
 };
 
 /*
@@ -539,4 +560,4 @@ class ThriftRouter {
 std::unique_ptr<const detail::ClusterLayout> parseConfig(
   const std::string& content, const std::string& local_group);
 
-}  // namespace common
+}  // namespace admin
